@@ -1,0 +1,18 @@
+# Local data and experiment outputs (reproducible, never commit)
+data/
+results/
+
+# Python
+__pycache__/
+*.egg-info/
+.venv/
+.pytest_cache/
+
+# Terraform: state can contain secrets, never commit it
+infra/.terraform/
+*.tfstate
+*.tfstate.*
+*.tfvars
+
+# Secrets
+.env
