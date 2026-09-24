@@ -11,29 +11,8 @@ import argparse
 import json
 import random
 
-from idp.config import RESULTS_DIR
 from idp.metrics import HEADER_FIELDS
-
-
-def find_run(selector: str, split: str, min_docs: int):
-    parts = selector.split(":")
-    method = parts[0]
-    model = parts[1] if len(parts) > 1 else None
-    prompt = parts[2] if len(parts) > 2 else None
-    matches = []
-    for path in sorted(RESULTS_DIR.glob("*/summary.json")):
-        s = json.loads(path.read_text())
-        if (
-            s["split"] == split
-            and s["n_docs"] >= min_docs
-            and s["method"] == method
-            and (model is None or s["model"] == model)
-            and (prompt is None or s.get("prompt", "v1" if s["model"] else None) == prompt)
-        ):
-            matches.append(path.parent)
-    if not matches:
-        raise SystemExit(f"No {split} run matches '{selector}'")
-    return matches[-1]
+from idp.runs import find_run
 
 
 def per_doc_correctness(run_dir) -> dict[str, dict[str, bool]]:

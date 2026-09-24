@@ -48,6 +48,19 @@ python scripts/significance.py textract llm_hybrid:claude-haiku-4.5:v2
 
 Textract responses are cached locally and in S3, so each page is billed only once.
 
+## Confidence model (straight-through processing)
+
+```bash
+python scripts/prepare_cord.py --splits train
+python scripts/run_eval.py --split train --method textract
+python scripts/run_eval.py --split train --method llm_hybrid --model claude-haiku-4.5 --prompt v2 --workers 1
+python scripts/train_confidence.py --precision 0.98
+```
+
+The model decides which documents can skip human review, using agreement between Claude and
+Textract, receipt arithmetic and Textract confidence scores. Trained on CORD train (800),
+threshold chosen by 5-fold cross-validation, evaluated on test.
+
 ## Results
 
 _Coming soon._

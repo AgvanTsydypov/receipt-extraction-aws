@@ -1,12 +1,37 @@
 """LLM extraction through the Bedrock Converse API with forced tool use."""
 
 import json
+import random
+import time
+
+from botocore.exceptions import ClientError
 
 from idp.aws import client
 from idp.config import MODELS
 from idp.schema import RECEIPT_TOOL_SCHEMA, Receipt
 
 TOOL_NAME = "record_receipt"
+
+# Our own retry loop for throttling. boto3's built-in retries share a retry budget per
+# client; on long throttled runs the budget drains and every later request fails at once.
+RETRYABLE_CODES = {"ThrottlingException", "ServiceUnavailableException", "ModelNotReadyException"}
+MAX_ATTEMPTS = 8
+BASE_DELAY_S = 2.0
+MAX_DELAY_S = 60.0
+
+
+def _converse_with_backoff(**kwargs) -> dict:
+    """Call Bedrock Converse, retrying throttling with exponential backoff and jitter."""
+    delay = BASE_DELAY_S
+    for attempt in range(1, MAX_ATTEMPTS + 1):
+        try:
+            return client("bedrock-runtime").converse(**kwargs)
+        except ClientError as exc:
+            if exc.response["Error"]["Code"] not in RETRYABLE_CODES or attempt == MAX_ATTEMPTS:
+                raise
+            time.sleep(delay * (0.5 + random.random()))
+            delay = min(delay * 2, MAX_DELAY_S)
+    raise RuntimeError("unreachable")
 
 PROMPTS = {
     "v1": """You are a precise data extraction system for retail receipts.
@@ -79,7 +104,7 @@ def extract_with_llm(
         content.append({"text": f"OCR text of the receipt:\n\n{ocr_text}"})
     content.append({"text": f"Extract the receipt data by calling the {TOOL_NAME} tool."})
 
-    response = client("bedrock-runtime").converse(
+    response = _converse_with_backoff(
         modelId=spec.model_id,
         system=[{"text": PROMPTS[prompt]}],
         messages=[{"role": "user", "content": content}],

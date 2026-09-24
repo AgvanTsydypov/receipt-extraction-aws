@@ -1,4 +1,8 @@
-"""Thread-safe, lazily created boto3 clients with retries for throttling."""
+"""Thread-safe, lazily created boto3 clients.
+
+boto3 retries are kept short on purpose: long Bedrock throttling is handled by the
+backoff loop in idp.extract, which does not depend on boto3's shared retry budget.
+"""
 
 import threading
 
@@ -11,7 +15,7 @@ _lock = threading.Lock()
 _clients: dict[str, object] = {}
 
 _CONFIG = Config(
-    retries={"max_attempts": 10, "mode": "adaptive"},
+    retries={"max_attempts": 3, "mode": "standard"},
     read_timeout=120,
 )
 
