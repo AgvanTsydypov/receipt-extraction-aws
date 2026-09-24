@@ -8,7 +8,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[2]
 DATA_DIR = PROJECT_ROOT / "data"
 RESULTS_DIR = PROJECT_ROOT / "results"
 
-AWS_REGION = os.environ.get("AWS_REGION", "us-east-1")
+AWS_REGION = os.environ.get("AWS_REGION", "eu-west-2")
 
 
 def require_bucket() -> str:
@@ -30,14 +30,15 @@ class ModelSpec:
     supports_images: bool
 
 
-# Approximate on-demand prices in us-east-1. Verify on the Bedrock pricing page
-# before quoting numbers in the README. Model IDs use US cross-region inference profiles.
+# Global cross-region inference profiles: requests start in eu-west-2 but may be
+# processed in other AWS regions. Prices are approximate, verify them on the
+# Bedrock pricing page before quoting numbers in the README.
 MODELS: dict[str, ModelSpec] = {
-    "nova-micro": ModelSpec("us.amazon.nova-micro-v1:0", 0.035, 0.14, supports_images=False),
-    "nova-lite": ModelSpec("us.amazon.nova-lite-v1:0", 0.06, 0.24, supports_images=True),
-    "nova-pro": ModelSpec("us.amazon.nova-pro-v1:0", 0.80, 3.20, supports_images=True),
+    "nova-2-lite": ModelSpec(
+        "global.amazon.nova-2-lite-v1:0", 0.30, 2.50, supports_images=True
+    ),
     "claude-haiku-4.5": ModelSpec(
-        "us.anthropic.claude-haiku-4-5-20251001-v1:0", 1.00, 5.00, supports_images=True
+        "global.anthropic.claude-haiku-4-5-20251001-v1:0", 1.00, 5.00, supports_images=True
     ),
 }
 
