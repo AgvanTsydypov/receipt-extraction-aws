@@ -3,7 +3,9 @@
 Methods:
     textract   - Textract AnalyzeExpense fields only (baseline, no LLM)
     llm_text   - Textract OCR text -> Bedrock LLM with structured output
+    llm_layout - Textract text rebuilt into visual rows -> Bedrock LLM
     llm_image  - receipt image -> multimodal Bedrock LLM (no Textract)
+    llm_hybrid - receipt image + layout text -> multimodal Bedrock LLM
 
 Examples:
     python scripts/run_eval.py --split dev --method textract
@@ -23,11 +25,12 @@ from tqdm import tqdm
 from idp.config import DATA_DIR, MODELS, RESULTS_DIR, TEXTRACT_EXPENSE_PRICE_PER_PAGE
 from idp.extract import extract_with_llm
 from idp.metrics import aggregate, score_document
-from idp.ocr import analyze_expense, ocr_text, textract_to_receipt
+from idp.ocr import analyze_expense, ocr_layout_text, ocr_text, textract_to_receipt
 from idp.schema import Receipt
 
-METHODS = ("textract", "llm_text", "llm_image")
-USES_TEXTRACT = {"textract", "llm_text"}
+METHODS = ("textract", "llm_text", "llm_layout", "llm_image", "llm_hybrid")
+USES_TEXTRACT = {"textract", "llm_text", "llm_layout", "llm_hybrid"}
+USES_IMAGE = {"llm_image", "llm_hybrid"}
 
 
 def list_docs(split: str, limit: int) -> list[str]:
@@ -43,11 +46,15 @@ def predict(split: str, doc_id: str, method: str, model: str | None) -> tuple[Re
         analysis, info["textract_fresh"] = analyze_expense(split, doc_id)
     if method == "textract":
         return textract_to_receipt(analysis), info
+    text = None
     if method == "llm_text":
-        receipt, usage = extract_with_llm(model, ocr_text=ocr_text(analysis))
-    else:
+        text = ocr_text(analysis)
+    elif method in ("llm_layout", "llm_hybrid"):
+        text = ocr_layout_text(analysis)
+    image = None
+    if method in USES_IMAGE:
         image = (DATA_DIR / "images" / split / f"{doc_id}.jpg").read_bytes()
-        receipt, usage = extract_with_llm(model, image_bytes=image)
+    receipt, usage = extract_with_llm(model, ocr_text=text, image_bytes=image)
     info.update(usage)
     return receipt, info
 
@@ -82,7 +89,7 @@ def main() -> None:
     args = parser.parse_args()
 
     if args.method != "textract" and not args.model:
-        parser.error("--model is required for llm_text and llm_image")
+        parser.error("--model is required for llm_* methods")
     model = args.model if args.method != "textract" else None
 
     doc_ids = list_docs(args.split, args.limit)

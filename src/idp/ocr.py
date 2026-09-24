@@ -56,6 +56,36 @@ def ocr_text(result: dict) -> str:
     return "\n".join(b["Text"] for b in blocks if b.get("BlockType") == "LINE" and b.get("Text"))
 
 
+def ocr_layout_text(result: dict, row_tolerance: float = 0.5) -> str:
+    """Rebuild visual rows from Textract LINE geometry.
+
+    Receipts put the item name on the left and the price on the right, and Textract
+    often returns them as separate lines. Grouping lines whose vertical centers are
+    close restores rows like 'NASI GORENG | 1 | 25,000', so the LLM does not have to
+    guess which price belongs to which item.
+    """
+    lines = []
+    for block in _first_document(result).get("Blocks") or []:
+        box = (block.get("Geometry") or {}).get("BoundingBox")
+        if block.get("BlockType") != "LINE" or not block.get("Text") or not box:
+            continue
+        center = box["Top"] + box["Height"] / 2
+        lines.append((center, box["Left"], box["Height"], block["Text"]))
+
+    rows: list[dict] = []
+    for center, left, height, text in sorted(lines):
+        if rows:
+            last = rows[-1]
+            if abs(center - last["center"]) < row_tolerance * max(height, last["height"]):
+                last["cells"].append((left, text))
+                n = len(last["cells"])
+                last["center"] += (center - last["center"]) / n  # running mean
+                continue
+        rows.append({"center": center, "height": height, "cells": [(left, text)]})
+
+    return "\n".join(" | ".join(text for _, text in sorted(r["cells"])) for r in rows)
+
+
 def _best_summary_value(doc: dict, field_type: str) -> str | None:
     best, best_conf = None, -1.0
     for field in doc.get("SummaryFields") or []:
