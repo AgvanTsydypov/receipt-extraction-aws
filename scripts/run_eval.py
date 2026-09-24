@@ -115,7 +115,7 @@ def load_previous(run: str) -> tuple[dict, list[dict], list[str]]:
 
 def main() -> None:
     parser = argparse.ArgumentParser()
-    parser.add_argument("--split", default="dev", choices=["dev", "test"])
+    parser.add_argument("--split", default="dev", choices=["dev", "test", "train"])
     parser.add_argument("--method", choices=METHODS)
     parser.add_argument("--model", choices=sorted(MODELS), help="required for llm_* methods")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, choices=sorted(PROMPTS))

@@ -63,7 +63,7 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("a", help="baseline, e.g. textract")
     parser.add_argument("b", help="challenger, e.g. llm_hybrid:claude-haiku-4.5:v2")
-    parser.add_argument("--split", default="dev", choices=["dev", "test"])
+    parser.add_argument("--split", default="dev", choices=["dev", "test", "train"])
     parser.add_argument("--min-docs", type=int, default=50)
     parser.add_argument("--n-boot", type=int, default=10000)
     parser.add_argument("--seed", type=int, default=42)

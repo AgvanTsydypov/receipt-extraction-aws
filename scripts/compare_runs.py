@@ -14,7 +14,7 @@ from idp.config import RESULTS_DIR
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--min-docs", type=int, default=50)
-    parser.add_argument("--split", choices=["dev", "test"])
+    parser.add_argument("--split", choices=["dev", "test", "train"])
     args = parser.parse_args()
 
     summaries = [json.loads(p.read_text()) for p in sorted(RESULTS_DIR.glob("*/summary.json"))]

@@ -2,6 +2,7 @@
 
 Usage:
     python scripts/prepare_cord.py                 # dev (100) + test (100), uploads to S3
+    python scripts/prepare_cord.py --splits train  # train (800), used to fit the confidence model
     python scripts/prepare_cord.py --limit 20      # quick smoke test
     python scripts/prepare_cord.py --no-upload     # local only
 """
@@ -19,7 +20,7 @@ from idp.config import DATA_DIR, require_bucket
 from idp.schema import LineItem, Receipt
 
 # Our split name -> Hugging Face split name
-SPLITS = {"dev": "validation", "test": "test"}
+SPLITS = {"dev": "validation", "test": "test", "train": "train"}
 MAX_SIDE = 1600  # keeps images small for Bedrock and fast for Textract
 
 
@@ -73,12 +74,17 @@ def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--limit", type=int, default=0, help="max documents per split (0 = all)")
     parser.add_argument("--no-upload", action="store_true", help="skip uploading images to S3")
+    parser.add_argument(
+        "--splits", default="dev,test", help="comma-separated: dev, test, train"
+    )
     args = parser.parse_args()
 
     bucket = None if args.no_upload else require_bucket()
     s3 = None if args.no_upload else client("s3")
 
-    for alias, hf_split in SPLITS.items():
+    for alias in args.splits.split(","):
+        hf_split = SPLITS[alias.strip()]
+        alias = alias.strip()
         dataset = load_dataset("naver-clova-ix/cord-v2", split=hf_split)
         image_dir = DATA_DIR / "images" / alias
         label_dir = DATA_DIR / "labels" / alias
