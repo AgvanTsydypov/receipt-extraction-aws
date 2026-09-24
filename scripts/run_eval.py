@@ -9,8 +9,11 @@ Methods:
 
 Examples:
     python scripts/run_eval.py --split dev --method textract
-    python scripts/run_eval.py --split dev --method llm_text --model nova-lite
-    python scripts/run_eval.py --split dev --method llm_image --model nova-lite --limit 10
+    python scripts/run_eval.py --split dev --method llm_text --model nova-2-lite
+    python scripts/run_eval.py --split dev --method llm_image --model nova-2-lite --limit 10
+
+    # Re-run only the documents that failed in an earlier run (settings are taken from it)
+    python scripts/run_eval.py --retry <run_folder_name> --workers 1
 """
 
 import argparse
@@ -83,37 +86,78 @@ def process(
     }
 
 
+def load_previous(run: str) -> tuple[dict, list[dict], list[str]]:
+    """Return (settings, successful records, failed doc ids) of an earlier run."""
+    run_dir = RESULTS_DIR / run
+    old = json.loads((run_dir / "summary.json").read_text())
+    kept, failed = [], []
+    for line in open(run_dir / "predictions.jsonl"):
+        r = json.loads(line)
+        if r["error"]:
+            failed.append(r["doc_id"])
+            continue
+        r["scores"] = score_document(
+            Receipt.model_validate(r["prediction"]), Receipt.model_validate(r["ground_truth"])
+        )
+        # Reused documents cost nothing in this run
+        r["llm_cost_usd_reused"] = r.pop("llm_cost_usd", 0.0)
+        r["llm_cost_usd"] = 0.0
+        r["textract_fresh"] = False
+        kept.append(r)
+    settings = {
+        "split": old["split"],
+        "method": old["method"],
+        "model": old["model"],
+        "prompt": old.get("prompt", "v1" if old["model"] else None),
+    }
+    return settings, kept, failed
+
+
 def main() -> None:
     parser = argparse.ArgumentParser()
     parser.add_argument("--split", default="dev", choices=["dev", "test"])
-    parser.add_argument("--method", required=True, choices=METHODS)
+    parser.add_argument("--method", choices=METHODS)
     parser.add_argument("--model", choices=sorted(MODELS), help="required for llm_* methods")
     parser.add_argument("--prompt", default=DEFAULT_PROMPT, choices=sorted(PROMPTS))
     parser.add_argument("--limit", type=int, default=0, help="max documents (0 = all)")
     parser.add_argument("--workers", type=int, default=4)
+    parser.add_argument("--retry", help="run folder name: re-run only its failed documents")
     args = parser.parse_args()
 
-    if args.method != "textract" and not args.model:
-        parser.error("--model is required for llm_* methods")
-    model = args.model if args.method != "textract" else None
-    prompt = args.prompt if model else None
+    if args.retry:
+        settings, kept, doc_ids = load_previous(args.retry)
+        split, method, model, prompt = (
+            settings["split"], settings["method"], settings["model"], settings["prompt"]
+        )
+        print(f"Retrying {len(doc_ids)} failed documents of {args.retry}")
+    else:
+        if not args.method:
+            parser.error("--method is required (or use --retry)")
+        if args.method != "textract" and not args.model:
+            parser.error("--model is required for llm_* methods")
+        split, method = args.split, args.method
+        model = args.model if method != "textract" else None
+        prompt = args.prompt if model else None
+        kept, doc_ids = [], list_docs(split, args.limit)
 
-    doc_ids = list_docs(args.split, args.limit)
-
-    # First document runs without error handling, so auth or model-access
-    # problems fail immediately with a full traceback instead of 100 errors.
-    records = [process(args.split, doc_ids[0], args.method, model, prompt, fail_fast=True)]
+    new_records = []
+    todo = list(doc_ids)
+    if todo and not args.retry:
+        # First document runs without error handling, so auth or model-access
+        # problems fail immediately with a full traceback instead of 100 errors.
+        new_records.append(process(split, todo.pop(0), method, model, prompt, fail_fast=True))
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
-        futures = [
-            pool.submit(process, args.split, d, args.method, model, prompt, False)
-            for d in doc_ids[1:]
-        ]
-        for future in tqdm(futures, total=len(futures), desc=args.method):
-            records.append(future.result())
+        futures = [pool.submit(process, split, d, method, model, prompt, False) for d in todo]
+        for future in tqdm(futures, total=len(futures), desc=method):
+            new_records.append(future.result())
+
+    records = sorted(kept + new_records, key=lambda r: r["doc_id"])
+    # Keep variable names used below
+    args.split, args.method = split, method
 
     summary = aggregate([r["scores"] for r in records])
     n = len(records)
-    avg_llm_cost = sum(r["llm_cost_usd"] for r in records) / n
+    avg_llm_cost = sum(r["llm_cost_usd"] + r.get("llm_cost_usd_reused", 0.0) for r in records) / n
     textract_per_doc = TEXTRACT_EXPENSE_PRICE_PER_PAGE if args.method in USES_TEXTRACT else 0.0
     latencies = sorted(r["latency_ms"] for r in records if r["latency_ms"] is not None)
 
@@ -160,6 +204,12 @@ def main() -> None:
     print(f"  spent this run:      ${summary['spent_this_run_usd']}")
     print(f"  latency p50/p95 ms:  {summary['latency_ms_p50']} / {summary['latency_ms_p95']}")
     print(f"Saved to {run_dir}")
+    if summary["n_errors"]:
+        print(
+            f"\n!!! WARNING: {summary['n_errors']} documents failed and were scored as empty."
+            f"\n!!! Metrics of this run are too low. Fix the cause, then run:"
+            f"\n!!!   python scripts/run_eval.py --retry {run_name} --workers 1"
+        )
 
 
 if __name__ == "__main__":

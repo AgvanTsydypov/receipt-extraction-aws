@@ -43,6 +43,7 @@ python scripts/run_eval.py --split dev --method llm_image --model nova-2-lite
 python scripts/rescore.py        # recompute metrics for old runs after metric changes
 python scripts/compare_runs.py
 python scripts/inspect_errors.py --method llm_text
+python scripts/significance.py textract llm_hybrid:claude-haiku-4.5:v2
 ```
 
 Textract responses are cached locally and in S3, so each page is billed only once.
