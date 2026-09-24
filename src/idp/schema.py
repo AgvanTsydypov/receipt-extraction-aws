@@ -10,6 +10,9 @@ class LineItem(BaseModel):
     name: str
     quantity: str | None = None
     price: str | None = None  # line total as printed
+    # Toppings, options and notes printed under the item. Not scored, but giving the
+    # model a place for them stops it from emitting them as separate items.
+    modifiers: list[str] = Field(default_factory=list)
 
 
 class Receipt(BaseModel):
@@ -35,6 +38,11 @@ RECEIPT_TOOL_SCHEMA = {
                     "name": {"type": "string", "description": "Item name exactly as printed."},
                     "quantity": {"type": "string", "description": "Quantity as printed, if any."},
                     "price": {"type": "string", "description": "Line total as printed."},
+                    "modifiers": {
+                        "type": "array",
+                        "description": "Toppings, options or notes printed under this item.",
+                        "items": {"type": "string"},
+                    },
                 },
                 "required": ["name"],
             },

@@ -23,7 +23,7 @@ from datetime import datetime
 from tqdm import tqdm
 
 from idp.config import DATA_DIR, MODELS, RESULTS_DIR, TEXTRACT_EXPENSE_PRICE_PER_PAGE
-from idp.extract import extract_with_llm
+from idp.extract import DEFAULT_PROMPT, PROMPTS, extract_with_llm
 from idp.metrics import aggregate, score_document
 from idp.ocr import analyze_expense, ocr_layout_text, ocr_text, textract_to_receipt
 from idp.schema import Receipt
@@ -40,7 +40,9 @@ def list_docs(split: str, limit: int) -> list[str]:
     return ids[:limit] if limit else ids
 
 
-def predict(split: str, doc_id: str, method: str, model: str | None) -> tuple[Receipt, dict]:
+def predict(
+    split: str, doc_id: str, method: str, model: str | None, prompt: str
+) -> tuple[Receipt, dict]:
     info = {"textract_fresh": False, "llm_cost_usd": 0.0, "latency_ms": None}
     if method in USES_TEXTRACT:
         analysis, info["textract_fresh"] = analyze_expense(split, doc_id)
@@ -54,16 +56,18 @@ def predict(split: str, doc_id: str, method: str, model: str | None) -> tuple[Re
     image = None
     if method in USES_IMAGE:
         image = (DATA_DIR / "images" / split / f"{doc_id}.jpg").read_bytes()
-    receipt, usage = extract_with_llm(model, ocr_text=text, image_bytes=image)
+    receipt, usage = extract_with_llm(model, ocr_text=text, image_bytes=image, prompt=prompt)
     info.update(usage)
     return receipt, info
 
 
-def process(split: str, doc_id: str, method: str, model: str | None, fail_fast: bool) -> dict:
+def process(
+    split: str, doc_id: str, method: str, model: str | None, prompt: str, fail_fast: bool
+) -> dict:
     gt = Receipt.model_validate_json((DATA_DIR / "labels" / split / f"{doc_id}.json").read_text())
     error = None
     try:
-        pred, info = predict(split, doc_id, method, model)
+        pred, info = predict(split, doc_id, method, model, prompt)
     except Exception as exc:  # noqa: BLE001 - one bad document must not stop the run
         if fail_fast:
             raise
@@ -84,6 +88,7 @@ def main() -> None:
     parser.add_argument("--split", default="dev", choices=["dev", "test"])
     parser.add_argument("--method", required=True, choices=METHODS)
     parser.add_argument("--model", choices=sorted(MODELS), help="required for llm_* methods")
+    parser.add_argument("--prompt", default=DEFAULT_PROMPT, choices=sorted(PROMPTS))
     parser.add_argument("--limit", type=int, default=0, help="max documents (0 = all)")
     parser.add_argument("--workers", type=int, default=4)
     args = parser.parse_args()
@@ -91,15 +96,17 @@ def main() -> None:
     if args.method != "textract" and not args.model:
         parser.error("--model is required for llm_* methods")
     model = args.model if args.method != "textract" else None
+    prompt = args.prompt if model else None
 
     doc_ids = list_docs(args.split, args.limit)
 
     # First document runs without error handling, so auth or model-access
     # problems fail immediately with a full traceback instead of 100 errors.
-    records = [process(args.split, doc_ids[0], args.method, model, fail_fast=True)]
+    records = [process(args.split, doc_ids[0], args.method, model, prompt, fail_fast=True)]
     with ThreadPoolExecutor(max_workers=args.workers) as pool:
         futures = [
-            pool.submit(process, args.split, d, args.method, model, False) for d in doc_ids[1:]
+            pool.submit(process, args.split, d, args.method, model, prompt, False)
+            for d in doc_ids[1:]
         ]
         for future in tqdm(futures, total=len(futures), desc=args.method):
             records.append(future.result())
@@ -110,13 +117,17 @@ def main() -> None:
     textract_per_doc = TEXTRACT_EXPENSE_PRICE_PER_PAGE if args.method in USES_TEXTRACT else 0.0
     latencies = sorted(r["latency_ms"] for r in records if r["latency_ms"] is not None)
 
-    run_name = f"{datetime.now():%Y%m%d-%H%M%S}_{args.split}_{args.method}_{model or 'none'}"
+    run_name = (
+        f"{datetime.now():%Y%m%d-%H%M%S}_{args.split}_{args.method}_{model or 'none'}"
+        + (f"_{prompt}" if prompt else "")
+    )
     summary.update(
         {
             "run": run_name,
             "split": args.split,
             "method": args.method,
             "model": model,
+            "prompt": prompt,
             "n_docs": n,
             "n_errors": sum(1 for r in records if r["error"]),
             # Steady-state cost if every document were processed from scratch

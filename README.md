@@ -40,6 +40,7 @@ python scripts/run_eval.py --split dev --method llm_text --model nova-2-lite
 python scripts/run_eval.py --split dev --method llm_image --model nova-2-lite
 
 # 3. Compare runs and inspect errors
+python scripts/rescore.py        # recompute metrics for old runs after metric changes
 python scripts/compare_runs.py
 python scripts/inspect_errors.py --method llm_text
 ```

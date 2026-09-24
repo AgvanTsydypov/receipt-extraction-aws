@@ -8,13 +8,35 @@ from idp.schema import RECEIPT_TOOL_SCHEMA, Receipt
 
 TOOL_NAME = "record_receipt"
 
-SYSTEM_PROMPT = """You are a precise data extraction system for retail receipts.
+PROMPTS = {
+    "v1": """You are a precise data extraction system for retail receipts.
 Rules:
 - Copy amounts exactly as printed, keeping separators. Do not calculate or convert anything.
 - The price of a line item is the line total printed on that line, not the unit price.
 - Omit a field when it is not printed on the receipt. Never guess.
 - Copy item names exactly as printed. Do not translate them.
-- Subtotal, tax, service, total, payment and change lines are not items."""
+- Subtotal, tax, service, total, payment and change lines are not items.""",
+    # v2 encodes the annotation guidelines found during error analysis on the dev split
+    "v2": """You are a precise data extraction system for receipts from shops and restaurants.
+Follow these annotation guidelines exactly.
+
+Line items
+- One item per purchased product line. Copy the name as printed, without translating it.
+- Do not include quantity markers in the name, such as "1x", "2 X", "1Prs" or a leading count. Put the count in "quantity".
+- Options printed on the same line as the product (for example "50%") are part of the name.
+- Lines printed under a product that describe it (toppings, sugar or ice level, notes like "Less Ice", lines starting with "-" or "+") are not separate items and not part of the name. Put them in "modifiers" of that product.
+- A standalone product line is an item even if its price is 0, for example a free plastic bag.
+- Discount, voucher, service charge, tax, subtotal, total, payment and change lines are not items.
+- "price" is the line total printed for that product, not the unit price.
+
+Amounts
+- Copy each amount as printed, keeping separators, but without currency symbols or labels. For example, for "PB1-TAX  Tax 6,364" return "6,364".
+- "tax" is the amount on the line labeled tax, PB1, PPN or VAT. Service charge is not tax. If the tax line prints 0, return "0".
+- "subtotal" is the amount before tax and service charge, if printed.
+- "total" is the final amount to pay.
+- Omit a field when it is not printed on the receipt. Never calculate or guess values.""",
+}
+DEFAULT_PROMPT = "v2"
 
 
 def _clean_tool_input(raw: dict) -> dict:
@@ -25,12 +47,25 @@ def _clean_tool_input(raw: dict) -> dict:
             items = json.loads(items)
         except json.JSONDecodeError:
             items = []
-    raw["items"] = [i for i in items if isinstance(i, dict) and i.get("name")]
+    cleaned = []
+    for item in items:
+        if not isinstance(item, dict) or not item.get("name"):
+            continue
+        modifiers = item.get("modifiers") or []
+        if isinstance(modifiers, str):
+            modifiers = [modifiers]
+        item["modifiers"] = [str(m) for m in modifiers if m is not None]
+        cleaned.append(item)
+    raw["items"] = cleaned
     return raw
 
 
 def extract_with_llm(
-    model_name: str, *, ocr_text: str | None = None, image_bytes: bytes | None = None
+    model_name: str,
+    *,
+    ocr_text: str | None = None,
+    image_bytes: bytes | None = None,
+    prompt: str = DEFAULT_PROMPT,
 ) -> tuple[Receipt, dict]:
     """Extract a Receipt from OCR text and/or a JPEG image. Returns (receipt, usage info)."""
     spec = MODELS[model_name]
@@ -46,7 +81,7 @@ def extract_with_llm(
 
     response = client("bedrock-runtime").converse(
         modelId=spec.model_id,
-        system=[{"text": SYSTEM_PROMPT}],
+        system=[{"text": PROMPTS[prompt]}],
         messages=[{"role": "user", "content": content}],
         toolConfig={
             "tools": [

@@ -37,3 +37,12 @@ def test_aggregate_doc_accuracy():
     assert summary["header_doc_accuracy"] == 0.5
     assert summary["full_doc_accuracy"] == 0.5
     assert summary["fields"]["items"]["f1"] == 1.0
+
+
+def test_fuzzy_items_tolerate_small_name_differences():
+    from idp.metrics import score_items_fuzzy
+
+    gt = [LineItem(name="Sop Sui Jiao", price="33,000"), LineItem(name="S-Ovaltine 50%", price="20,000")]
+    pred = [LineItem(name="1Prs Sop Sui Jiao", price="33.000"), LineItem(name="S-Ovaltine", price="21,000")]
+    # First matches despite the quantity prefix, second fails because the price differs
+    assert score_items_fuzzy(pred, gt) == Counts(tp=1, fp=1, fn=1)

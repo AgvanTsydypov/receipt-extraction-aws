@@ -2,6 +2,7 @@
 
 from collections import Counter
 from dataclasses import asdict, dataclass
+from difflib import SequenceMatcher
 
 from idp.normalize import norm_amount, norm_text
 
@@ -58,9 +59,40 @@ def score_items(pred_items, gt_items) -> Counts:
     return Counts(tp=tp, fp=sum(pred.values()) - tp, fn=sum(gt.values()) - tp)
 
 
+def names_similar(a: str | None, b: str | None, threshold: float = 0.8) -> bool:
+    """Lenient name match: high similarity, or the shorter name is contained in the longer."""
+    if a == b:
+        return True
+    if not a or not b:
+        return False
+    short, long_ = sorted((a, b), key=len)
+    if len(short) >= 4 and short in long_:
+        return True
+    return SequenceMatcher(None, a, b).ratio() >= threshold
+
+
+def score_items_fuzzy(pred_items, gt_items) -> Counts:
+    """Price must match exactly, name may differ slightly (e.g. '1Prs Sop Sui Jiao')."""
+    unused = [(norm_text(p.name), norm_amount(p.price)) for p in pred_items]
+    tp = 0
+    for gt in gt_items:
+        g_name, g_price = norm_text(gt.name), norm_amount(gt.price)
+        candidates = [
+            (SequenceMatcher(None, g_name or "", name or "").ratio(), idx)
+            for idx, (name, price) in enumerate(unused)
+            if price == g_price and names_similar(g_name, name)
+        ]
+        if candidates:
+            _, best = max(candidates)
+            unused.pop(best)
+            tp += 1
+    return Counts(tp=tp, fp=len(pred_items) - tp, fn=len(gt_items) - tp)
+
+
 def score_document(pred, gt) -> dict[str, Counts]:
     scores = {f: score_header_field(getattr(pred, f), getattr(gt, f)) for f in HEADER_FIELDS}
     scores["items"] = score_items(pred.items, gt.items)
+    scores["items_fuzzy"] = score_items_fuzzy(pred.items, gt.items)
     return scores
 
 

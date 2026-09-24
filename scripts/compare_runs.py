@@ -26,17 +26,20 @@ def main() -> None:
         raise SystemExit("No matching runs found in results/")
 
     header = (
-        "| Split | N | Method | Model | Total F1 | Subtotal F1 | Tax F1 | Items F1 "
-        "| Header doc acc | Full doc acc | $ / 1k docs | p50 ms |"
+        "| Split | N | Method | Model | Prompt | Total F1 | Subtotal F1 | Tax F1 | Items F1 "
+        "| Items F1 (fuzzy) | Header doc acc | Full doc acc | $ / 1k docs | p50 ms |"
     )
     print(header)
     print("|" + "---|" * (header.count("|") - 1))
     for s in summaries:
         f = s["fields"]
+        # Runs made before prompt versions existed used v1
+        prompt = s.get("prompt", "v1" if s["model"] else None) or "-"
+        fuzzy = f"{f['items_fuzzy']['f1']:.3f}" if "items_fuzzy" in f else "-"
         print(
-            f"| {s['split']} | {s['n_docs']} | {s['method']} | {s['model'] or '-'} "
+            f"| {s['split']} | {s['n_docs']} | {s['method']} | {s['model'] or '-'} | {prompt} "
             f"| {f['total']['f1']:.3f} | {f['subtotal']['f1']:.3f} | {f['tax']['f1']:.3f} "
-            f"| {f['items']['f1']:.3f} | {s['header_doc_accuracy']:.3f} "
+            f"| {f['items']['f1']:.3f} | {fuzzy} | {s['header_doc_accuracy']:.3f} "
             f"| {s.get('full_doc_accuracy', 0):.3f} "
             f"| {s['cost_per_1k_docs_usd']} | {s['latency_ms_p50'] or '-'} |"
         )
