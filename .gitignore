@@ -6,6 +6,7 @@ results/
 __pycache__/
 *.egg-info/
 .venv/
+venv/
 .pytest_cache/
 
 # Terraform: state can contain secrets, never commit it
@@ -16,3 +17,4 @@ infra/.terraform/
 
 # Secrets
 .env
+.DS_Store
