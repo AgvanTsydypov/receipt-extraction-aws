@@ -1,6 +1,7 @@
 """LLM extraction through the Bedrock Converse API with forced tool use."""
 
 import json
+import os
 import random
 import time
 
@@ -15,7 +16,8 @@ TOOL_NAME = "record_receipt"
 # Our own retry loop for throttling. boto3's built-in retries share a retry budget per
 # client; on long throttled runs the budget drains and every later request fails at once.
 RETRYABLE_CODES = {"ThrottlingException", "ServiceUnavailableException", "ModelNotReadyException"}
-MAX_ATTEMPTS = 8
+# Lambda sets this low: there Step Functions retries the whole step instead
+MAX_ATTEMPTS = int(os.environ.get("IDP_BEDROCK_MAX_ATTEMPTS", "8"))
 BASE_DELAY_S = 2.0
 MAX_DELAY_S = 60.0
 
@@ -90,6 +92,7 @@ def extract_with_llm(
     *,
     ocr_text: str | None = None,
     image_bytes: bytes | None = None,
+    image_format: str = "jpeg",
     prompt: str = DEFAULT_PROMPT,
 ) -> tuple[Receipt, dict]:
     """Extract a Receipt from OCR text and/or a JPEG image. Returns (receipt, usage info)."""
@@ -99,7 +102,7 @@ def extract_with_llm(
 
     content = []
     if image_bytes is not None:
-        content.append({"image": {"format": "jpeg", "source": {"bytes": image_bytes}}})
+        content.append({"image": {"format": image_format, "source": {"bytes": image_bytes}}})
     if ocr_text is not None:
         content.append({"text": f"OCR text of the receipt:\n\n{ocr_text}"})
     content.append({"text": f"Extract the receipt data by calling the {TOOL_NAME} tool."})

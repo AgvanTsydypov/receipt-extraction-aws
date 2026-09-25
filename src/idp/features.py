@@ -27,9 +27,13 @@ def _as_items(items: list[dict]) -> list:
 
 
 def textract_signals(split: str, doc_id: str) -> dict[str, float]:
-    """Confidence scores from the cached Textract AnalyzeExpense response."""
+    """Confidence scores from the locally cached Textract response of a dataset document."""
     path = DATA_DIR / "ocr" / split / f"{doc_id}.json"
-    result = json.loads(path.read_text()) if path.exists() else {}
+    return textract_signals_from_result(json.loads(path.read_text()) if path.exists() else {})
+
+
+def textract_signals_from_result(result: dict) -> dict[str, float]:
+    """Confidence scores from a Textract AnalyzeExpense response."""
     docs = result.get("ExpenseDocuments") or [{}]
     doc = docs[0]
 

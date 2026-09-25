@@ -11,7 +11,6 @@ RESULTS_DIR = PROJECT_ROOT / "results"
 AWS_REGION = os.environ.get("AWS_REGION", "eu-west-2")
 
 
-
 def require_bucket() -> str:
     """Return the project bucket name or fail with a helpful message."""
     bucket = os.environ.get("IDP_BUCKET", "")
@@ -23,9 +22,7 @@ def require_bucket() -> str:
     return bucket
 
 
-
 @dataclass(frozen=True)
-
 class ModelSpec:
     model_id: str
     input_price_per_m: float  # USD per 1M input tokens

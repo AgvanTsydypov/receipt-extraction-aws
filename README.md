@@ -61,6 +61,33 @@ The model decides which documents can skip human review, using agreement between
 Textract, receipt arithmetic and Textract confidence scores. Trained on CORD train (800),
 threshold chosen by 5-fold cross-validation, evaluated on test.
 
+## Production pipeline on AWS
+
+```mermaid
+flowchart LR
+    U[Upload receipt] --> S3[(S3 incoming/)]
+    S3 -->|Object Created| EB[EventBridge]
+    EB --> SF{{Step Functions}}
+    SF --> T[Lambda: Textract AnalyzeExpense]
+    T --> X[Lambda: Claude Haiku 4.5 on image + layout text]
+    X --> C[Lambda: confidence model]
+    C --> D[(DynamoDB)]
+    D --> A[AUTO_APPROVED]
+    D --> R[NEEDS_REVIEW]
+```
+
+All three Lambdas share one arm64 container image. Step Functions retries throttled steps
+with exponential backoff and jitter, and failed documents are stored with status `FAILED`.
+Everything is defined in Terraform (`infra/`).
+
+```bash
+terraform -chdir=infra apply -target=aws_ecr_repository.pipeline
+./scripts/build_and_push.sh
+terraform -chdir=infra apply
+aws s3 cp results/confidence/<run>/models.joblib "s3://$IDP_BUCKET/models/confidence.joblib"
+python scripts/pipeline_demo.py --n 10
+```
+
 ## Results
 
 _Coming soon._

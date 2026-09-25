@@ -1,0 +1,10 @@
+# Keep the build context small: only src/ is copied into the image
+data/
+results/
+venv/
+.venv/
+.git/
+infra/
+tests/
+scripts/
+*.zip
