@@ -1,4 +1,5 @@
 # Receipt extraction on AWS: Textract vs LLMs, with confidence-based routing
+![CI](https://github.com/AgvanTsydypov/receipt-extraction-aws/actions/workflows/ci.yml/badge.svg)
 
 This project reads receipt images, extracts the amounts and line items, and decides which receipts can be trusted without a human check. It runs as a serverless pipeline on AWS (Textract, Bedrock, Lambda, Step Functions, DynamoDB), and all infrastructure is defined in Terraform.
 
